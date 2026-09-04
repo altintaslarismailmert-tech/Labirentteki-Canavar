@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>Labirentten Kaç - Mobil</title>
+<style>
+html,body{margin:0;overflow:hidden;background:#000;font-family:Arial;color:#fff;touch-action:none}
+canvas{display:block}
+#minimap{position:absolute;top:55px;left:14px;width:150px;height:150px;border:2px solid #ffffff88;background:#111;pointer-events:none;box-shadow:0 0 10px #000}#ui{position:fixed;inset:0;pointer-events:none;padding:14px;text-shadow:2px 2px 4px #000}
+#top{display:flex;justify-content:space-between;font-weight:bold;font-size:17px}#msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:#0009;font-size:28px;padding:20px}
+button{pointer-events:auto;border:0;border-radius:12px;padding:15px 24px;font-size:20px;margin-top:20px}
+#joy{position:absolute;bottom:35px;left:28px;width:120px;height:120px;border:2px solid #ffffff66;border-radius:50%;pointer-events:auto;background:#ffffff18}
+#stick{position:absolute;width:55px;height:55px;border-radius:50%;background:#ffffff99;left:32px;top:32px}
+#run{position:absolute;bottom:45px;right:35px;width:85px;height:85px;border-radius:50%;background:#ff444488;color:#fff;font-weight:bold;pointer-events:auto}
+#look{position:absolute;right:0;top:70px;width:50%;height:65%;pointer-events:auto}
+#hint{position:absolute;bottom:5px;width:100%;text-align:center;font-size:12px}
+#jumpscare{position:fixed;inset:0;display:none;z-index:99;background:#000;align-items:center;justify-content:center;pointer-events:none}.jface{font-size:180px;filter:drop-shadow(0 0 25px #f00);transform:scale(1.8)}.shake{animation:shake .08s infinite}@keyframes shake{0%{transform:translate(0,0) scale(1.8)}25%{transform:translate(-12px,8px) scale(1.9)}50%{transform:translate(10px,-7px) scale(1.85)}75%{transform:translate(-8px,-10px) scale(1.92)}100%{transform:translate(0,0) scale(1.8)}}
+
+.menu{background:radial-gradient(circle at center,#241018 0%,#09090b 48%,#000 100%);overflow:hidden}
+.menuGlow{position:absolute;width:320px;height:320px;border-radius:50%;background:#7d102633;filter:blur(35px);animation:pulseGlow 2.5s infinite alternate}
+.menuMonster{position:relative;font-size:105px;filter:drop-shadow(0 0 18px #ff2030);animation:monsterFloat 2s ease-in-out infinite}
+.menuTitle{position:relative;margin-top:8px;font-size:42px;font-weight:900;line-height:.92;letter-spacing:4px;text-shadow:0 0 12px #ff2030,3px 3px 0 #000}
+.menuTitle span{font-size:58px;color:#ff3040}
+.menuLine{position:relative;width:190px;height:2px;background:#ff3040;margin:16px 0 12px;box-shadow:0 0 10px #ff3040}
+.menuSub{position:relative;font-size:12px;letter-spacing:1.5px;color:#ddd;max-width:330px}
+.menu button{position:relative;background:#b7192b;color:#fff;font-weight:900;border:2px solid #ff5260;box-shadow:0 0 18px #b7192b;transition:transform .15s,box-shadow .15s}
+.menu button:active{transform:scale(.95);box-shadow:0 0 8px #b7192b}
+.menuHint{position:relative;margin-top:14px;font-size:12px;color:#aaa}
+@keyframes pulseGlow{from{transform:scale(.8);opacity:.5}to{transform:scale(1.2);opacity:.9}}
+@keyframes monsterFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-7px) scale(1.04)}}
+</style></head><body>
+<div id="jumpscare"><div class="jface">👹</div></div>
+<div id="ui">
+<div id="msg" class="menu">
+  <div class="menuGlow"></div>
+  <div class="menuMonster">👹</div>
+  <div class="menuTitle">LABİRENTTEN<br><span>KAÇ!</span></div>
+  <div class="menuLine"></div>
+  <div class="menuSub">3 ANAHTARI BUL • CANAVARDAN KAÇ • ÇIKIŞA ULAŞ</div>
+  <button id="start">OYUNA BAŞLA</button>
+  <div class="menuHint">⚠️ Kulaklığını tak ve dikkatli ol...</div>
+</div>
+<div id="joy" style="display:none"><div id="stick"></div></div><div id="look" style="display:none"></div><button id="run" style="display:none">KOŞ</button></div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x050505);scene.fog=new THREE.Fog(0x050505,3,35);
+const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.1,100);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));document.body.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0x9999aa,0x111111,1.7));const lamp=new THREE.PointLight(0xffffff,1.4,18);scene.add(lamp);
+const map=[
+"###############",
+"#P....#.......#",
+"#.###.#.#####.#",
+"#...#.#.....#.#",
+"###.#.#####.#.#",
+"#...#.....#.#.#",
+"#.#######.#.#.#",
+"#.#.....#.#...#",
+"#.#.###.#.###.#",
+"#...#K#.#...#.#",
+"#.###.#.###.#.#",
+"#K..#.....#.#.#",
+"#.#.#####.#.#.#",
+"#.#.....K.....E",
+"###############"],N=15,S=2;
+
+// Sol üstte mini labirent haritası
+const mini=document.getElementById("minimap");
+const mctx=mini.getContext("2d");
+function drawMinimap(){
+  const w=mini.width/N;
+  mctx.clearRect(0,0,mini.width,mini.height);
+  for(let z=0;z<N;z++)for(let x=0;x<N;x++){
+    if(map[z][x]=="#"){
+      mctx.fillStyle="#d1b84f";
+      mctx.fillRect(x*w,z*w,w,w);
+    }else{
+      mctx.fillStyle="#222";
+      mctx.fillRect(x*w,z*w,w,w);
+    }
+    if(map[z][x]=="E"){
+      mctx.fillStyle="#00dd66";
+      mctx.fillRect(x*w+2,z*w+2,w-4,w-4);
+    }
+  }
+  // Anahtarları göster
+  for(const k of keyMeshes){
+    if(k.visible){
+      const x=k.position.x/2, z=k.position.z/2;
+      mctx.fillStyle="#ffd700";
+      mctx.fillRect(x*w+w*.3,z*w+w*.3,w*.4,w*.4);
+    }
+  }
+  // Canavar
+  if(monster){
+    mctx.fillStyle="#ff3333";
+    mctx.beginPath();
+    mctx.arc((monster.position.x/2+.5)*w,(monster.position.z/2+.5)*w,w*.35,0,Math.PI*2);
+    mctx.fill();
+  }
+  // Oyuncu
+  const px=(camera.position.x/2+.5)*w, pz=(camera.position.z/2+.5)*w;
+  mctx.fillStyle="#33aaff";
+  mctx.beginPath();mctx.arc(px,pz,w*.35,0,Math.PI*2);mctx.fill();
+}
+
+const wallMat=new THREE.MeshStandardMaterial({color:0xc9b458,roughness:1}),walls=[];
+let start,exitPos,keyMeshes=[];function cell(x,z){return new THREE.Vector3(x*S,1.25,z*S)}
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(N*S,N*S),new THREE.MeshStandardMaterial({color:0x8f8750}));floor.rotation.x=-Math.PI/2;floor.position.set(14,0,14);scene.add(floor);
+for(let z=0;z<N;z++)for(let x=0;x<N;x++){let c=map[z][x],p=cell(x,z);if(c=="#"){let w=new THREE.Mesh(new THREE.BoxGeometry(S,2.5,S),wallMat);w.position.copy(p);scene.add(w);walls.push(w)}if(c=="P")start=new THREE.Vector3(x*S,1.1,z*S);if(c=="E")exitPos=new THREE.Vector3(x*S,1,z*S);if(c=="K"){let k=new THREE.Mesh(new THREE.TorusGeometry(.28,.09,10,20),new THREE.MeshStandardMaterial({color:0xffd700,emissive:0x886600}));k.position.set(x*S,.8,z*S);k.rotation.x=Math.PI/2;scene.add(k);keyMeshes.push(k)}}
+const exit=new THREE.Mesh(new THREE.BoxGeometry(.3,2,.3),new THREE.MeshStandardMaterial({color:0x00ff66,emissive:0x006622}));exit.position.copy(exitPos);scene.add(exit);
+// Detaylı tek gözlü, turkuaz tüylü, büyük ağızlı canavar
+const monster=new THREE.Group();
+
+const fur=new THREE.MeshStandardMaterial({color:0x079fb0,roughness:.85});
+const furDark=new THREE.MeshStandardMaterial({color:0x04566b,roughness:.95});
+const pink=new THREE.MeshStandardMaterial({color:0xd41459,roughness:.65});
+const toothMat=new THREE.MeshStandardMaterial({color:0xf4ead8,roughness:.35});
+const black=new THREE.MeshStandardMaterial({color:0x12051a,roughness:.8});
+const eyeWhite=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.25});
+const irisMat=new THREE.MeshStandardMaterial({color:0x202020,roughness:.25});
+const pupilMat=new THREE.MeshBasicMaterial({color:0x000000});
+
+// Ana gövde: iri ve kambur
+const body=new THREE.Mesh(new THREE.SphereGeometry(1.05,24,18),fur);
+body.scale.set(1.05,1.2,.75); body.position.y=2.25; monster.add(body);
+
+// Omuzlar
+for(const side of [-1,1]){
+  const shoulder=new THREE.Mesh(new THREE.SphereGeometry(.52,16,12),fur);
+  shoulder.position.set(side*.9,2.65,0); monster.add(shoulder);
+}
+
+// Büyük kafa
+const head=new THREE.Mesh(new THREE.SphereGeometry(.95,24,18),fur);
+head.scale.set(1.05,.95,.8); head.position.set(0,3.55,.05); monster.add(head);
+
+// Tek büyük göz
+const eye=new THREE.Mesh(new THREE.SphereGeometry(.34,20,14),eyeWhite);
+eye.scale.set(1,1,.35); eye.position.set(0,3.83,.72); monster.add(eye);
+const iris=new THREE.Mesh(new THREE.SphereGeometry(.17,16,12),irisMat);
+iris.scale.set(1,1,.25); iris.position.set(0,3.83,.94); monster.add(iris);
+const pupil=new THREE.Mesh(new THREE.SphereGeometry(.075,12,10),pupilMat);
+pupil.scale.set(1,1,.25); pupil.position.set(0,3.83,1.02); monster.add(pupil);
+
+// Boynuzlar
+for(const side of [-1,1]){
+  const horn=new THREE.Mesh(new THREE.ConeGeometry(.22,.9,10),pink);
+  horn.position.set(side*.55,4.35,.02);
+  horn.rotation.z=side*.6;
+  monster.add(horn);
+}
+
+// Büyük açık ağız
+const mouth=new THREE.Mesh(new THREE.SphereGeometry(.68,24,16),black);
+mouth.scale.set(1,.68,.22); mouth.position.set(0,3.25,.72); monster.add(mouth);
+
+// Üst ve alt keskin dişler
+for(let i=-4;i<=4;i++){
+  const x=i*.14;
+  const upper=new THREE.Mesh(new THREE.ConeGeometry(.075,.42,8),toothMat);
+  upper.position.set(x,3.5,.95); upper.rotation.x=Math.PI; monster.add(upper);
+  const lower=new THREE.Mesh(new THREE.ConeGeometry(.07,.35,8),toothMat);
+  lower.position.set(x,3.0,.95); monster.add(lower);
+}
+
+// Dil
+const tongue=new THREE.Mesh(new THREE.SphereGeometry(.22,14,10),pink);
+tongue.scale.set(.9,.4,1.8); tongue.position.set(0,3.05,.96); monster.add(tongue);
+
+// İki büyük kol ve uzun pençeler
+for(const side of [-1,1]){
+  const arm=new THREE.Group();
+  arm.position.set(side*1.05,2.45,0);
+  arm.rotation.z=side*.22;
+
+  const upper=new THREE.Mesh(new THREE.CylinderGeometry(.27,.4,1.55,12),fur);
+  upper.position.y=-.65; upper.rotation.z=side*.22; arm.add(upper);
+
+  const fore=new THREE.Mesh(new THREE.CylinderGeometry(.22,.3,1.2,12),furDark);
+  fore.position.set(side*.18,-1.65,.05); fore.rotation.z=side*.22; arm.add(fore);
+
+  const hand=new THREE.Mesh(new THREE.SphereGeometry(.35,14,10),fur);
+  hand.position.set(side*.38,-2.18,.1); arm.add(hand);
+
+  for(let c=-2;c<=2;c++){
+    const claw=new THREE.Mesh(new THREE.ConeGeometry(.09,.48,8),pink);
+    claw.position.set(side*.38+c*.10,-2.52,.16);
+    claw.rotation.x=Math.PI;
+    arm.add(claw);
+  }
+  monster.add(arm);
+}
+
+// Güçlü iki bacak
+for(const side of [-1,1]){
+  const leg=new THREE.Mesh(new THREE.CylinderGeometry(.32,.48,1.45,12),fur);
+  leg.position.set(side*.45,.95,0); monster.add(leg);
+
+  const foot=new THREE.Mesh(new THREE.SphereGeometry(.42,14,10),furDark);
+  foot.scale.set(1,.55,1.5); foot.position.set(side*.45,.2,.25); monster.add(foot);
+
+  for(let c=-1;c<=1;c++){
+    const toe=new THREE.Mesh(new THREE.ConeGeometry(.08,.42,8),pink);
+    toe.position.set(side*.45+c*.13,.08,.68);
+    toe.rotation.x=Math.PI/2; monster.add(toe);
+  }
+}
+
+// Tüylü görünüm için gövde ve kollara küçük çıkıntılar
+for(let i=0;i<32;i++){
+  const a=i*2.399;
+  const y=1.5+(i%8)*.32;
+  const r=.85;
+  const tuft=new THREE.Mesh(new THREE.ConeGeometry(.055,.25,5),furDark);
+  tuft.position.set(Math.cos(a)*r,y,Math.sin(a)*.5);
+  tuft.rotation.z=a;
+  monster.add(tuft);
+}
+
+monster.position.set(25,0,25);
+monster.scale.set(.78,.78,.78);
+scene.add(monster);
+
+camera.position.copy(start);let yaw=0,pitch=0,joy={x:0,y:0},running=false,collected=0,over=false,run=false;
+let heardNoise=false,noiseTimer=0,noisePosition=new THREE.Vector3(),lastStepTime=0,jumpDone=false;
+
+// 🎵 Oyun müziği ve canavar yaklaşma gerilimi
+let audioCtx=null, masterGain=null, musicGain=null, tensionGain=null;
+let musicTimer=null, tensionTimer=null;
+
+function initAudio(){
+  if(audioCtx) { if(audioCtx.state==="suspended") audioCtx.resume(); return; }
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC) return;
+  audioCtx=new AC();
+
+  masterGain=audioCtx.createGain();
+  masterGain.gain.value=.32;
+  masterGain.connect(audioCtx.destination);
+
+  musicGain=audioCtx.createGain();
+  musicGain.gain.value=.18;
+  musicGain.connect(masterGain);
+
+  tensionGain=audioCtx.createGain();
+  tensionGain.gain.value=0;
+  tensionGain.connect(masterGain);
+
+  // Karanlık, oyun melodisi: düşük sesli tekrar eden synth notaları
+  const notes=[55,65.41,73.42,65.41,49,58.27,65.41,58.27];
+  let i=0;
+  musicTimer=setInterval(()=>{
+    if(!audioCtx||!running||over) return;
+    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.type="triangle";
+    o.frequency.value=notes[i++%notes.length];
+    g.gain.setValueAtTime(.0001,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.045,audioCtx.currentTime+.04);
+    g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+.75);
+    o.connect(g); g.connect(musicGain);
+    o.start(); o.stop(audioCtx.currentTime+.8);
+  },620);
+
+  // Gerilim sesi: canavar yaklaştıkça titreşimli düşük ton
+  tensionTimer=setInterval(()=>{
+    if(!audioCtx||!running||over) return;
+    const dist=monster.position.distanceTo(camera.position);
+    const danger=Math.max(0,Math.min(1,(14-dist)/14));
+    const target=danger*danger*.22;
+    tensionGain.gain.setTargetAtTime(target,audioCtx.currentTime,.08);
+    if(danger>.03){
+      const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+      o.type="sawtooth";
+      o.frequency.value=48+danger*28;
+      g.gain.setValueAtTime(.0001,audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(.025*danger+.001,audioCtx.currentTime+.04);
+      g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+.25);
+      o.connect(g); g.connect(tensionGain);
+      o.start(); o.stop(audioCtx.currentTime+.27);
+    }
+  },260);
+}
+
+function stopAudio(){
+  if(musicTimer) clearInterval(musicTimer);
+  if(tensionTimer) clearInterval(tensionTimer);
+  musicTimer=tensionTimer=null;
+  if(audioCtx){try{audioCtx.close()}catch(e){}}
+  audioCtx=null;
+}
+
+function jumpscare(){if(jumpDone)return;jumpDone=true;const j=document.getElementById("jumpscare"),f=j.firstElementChild;j.style.display="flex";f.classList.add("shake");const AC=window.AudioContext||window.webkitAudioContext;if(AC){const a=new AC(),o=a.createOscillator(),g=a.createGain();o.type="sawtooth";o.frequency.setValueAtTime(180,a.currentTime);o.frequency.exponentialRampToValueAtTime(45,a.currentTime+.65);g.gain.setValueAtTime(.001,a.currentTime);g.gain.exponentialRampToValueAtTime(.8,a.currentTime+.03);g.gain.exponentialRampToValueAtTime(.001,a.currentTime+.8);o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+.85)}setTimeout(()=>{j.style.display="none";f.classList.remove("shake")},900)}
+// Canavarın bütün ulaşılabilir koridorları dolaşması için tam harita devriye rotası
+function buildPatrolPath(){
+  const startX=Math.round(monster.position.x/S), startZ=Math.round(monster.position.z/S);
+  const visited=new Set(), path=[];
+  const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+  const key=(x,z)=>x+','+z;
+  function dfs(x,z){
+    const k=key(x,z);
+    if(x<0||z<0||x>=N||z>=N||map[z][x]=='#'||visited.has(k)) return;
+    visited.add(k);
+    path.push(new THREE.Vector3(x*S,0,z*S));
+    const shuffled=dirs.slice().sort(()=>Math.random()-.5);
+    for(const [dx,dz] of shuffled){
+      const nx=x+dx,nz=z+dz;
+      if(nx>=0&&nz>=0&&nx<N&&nz<N&&map[nz][nx]!='#'&&!visited.has(key(nx,nz))){
+        dfs(nx,nz);
+        // Geri dönüşü de ekle: canavar her koridoru tarayarak başlangıca geri döner.
+        path.push(new THREE.Vector3(x*S,0,z*S));
+      }
+    }
+  }
+  dfs(startX,startZ);
+  return path;
+}
+const patrolPoints=buildPatrolPath();
+let patrolIndex=0;
+
+function collide(p){
+  const r=.22;
+  const samples=[[0,0],[r,0],[-r,0],[0,r],[0,-r]];
+  return samples.some(([sx,sz])=>{const x=Math.round((p.x+sx)/S),z=Math.round((p.z+sz)/S);return x<0||z<0||x>=N||z>=N||map[z][x]=="#"});
+}
+function cellOf(pos){return {x:Math.round(pos.x/S),z:Math.round(pos.z/S)}}
+function canSeePlayer(){
+  const a=cellOf(monster.position), b=cellOf(camera.position);
+  let x=a.x,z=a.z,dx=Math.abs(b.x-a.x),dz=Math.abs(b.z-a.z),sx=a.x<b.x?1:-1,sz=a.z<b.z?1:-1,err=dx-dz;
+  while(true){
+    if(x<0||z<0||x>=N||z>=N||map[z][x]=="#") return false;
+    if(x===b.x&&z===b.z) return true;
+    const e2=2*err; if(e2>-dz){err-=dz;x+=sx} if(e2<dx){err+=dx;z+=sz}
+  }
+}
+function nextStepToward(from,to){
+  const a=cellOf(from), b=cellOf(to);
+  const q=[[a.x,a.z]], prev=new Map([[a.x+","+a.z,null]]);
+  const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+  while(q.length){const [x,z]=q.shift(); if(x===b.x&&z===b.z) break;
+    for(const [dx,dz] of dirs){const nx=x+dx,nz=z+dz,k=nx+","+nz;
+      if(nx<0||nz<0||nx>=N||nz>=N||map[nz][nx]=="#"||prev.has(k)) continue;
+      prev.set(k,[x,z]);q.push([nx,nz]);
+    }
+  }
+  const targetKey=b.x+","+b.z; if(!prev.has(targetKey)) return null;
+  let cur=[b.x,b.z], parent=prev.get(targetKey);
+  while(parent && !(parent[0]===a.x&&parent[1]===a.z)){cur=parent;parent=prev.get(cur[0]+","+cur[1])}
+  return new THREE.Vector3(cur[0]*S,0,cur[1]*S);
+}
+function finish(win){over=true;running=false;stopAudio();document.getElementById("msg").style.display="flex";document.getElementById("msg").innerHTML=win?"🎉 KAÇTIN!<br><small>Labirentten başarıyla çıktın!</small><button onclick='location.reload()'>TEKRAR OYNA</button>":"💀 CANAVAR YAKALADI!<button onclick='location.reload()'>TEKRAR DENE</button>"}
+document.getElementById("start").onclick=()=>{
+  running=true;
+  document.getElementById("msg").style.display="none";
+  document.getElementById("joy").style.display="block";
+  document.getElementById("look").style.display="block";
+  document.getElementById("run").style.display="block";
+  initAudio();
+};
+const J=document.getElementById("joy"),ST=document.getElementById("stick");let jt=null;
+J.addEventListener("pointerdown",e=>{jt=e.pointerId;J.setPointerCapture(jt);moveJoy(e)});J.addEventListener("pointermove",e=>{if(e.pointerId==jt)moveJoy(e)});J.addEventListener("pointerup",e=>{jt=null;joy={x:0,y:0};ST.style.left="32px";ST.style.top="32px"});
+function moveJoy(e){let r=J.getBoundingClientRect(),x=e.clientX-r.left-60,y=e.clientY-r.top-60,d=Math.hypot(x,y),m=Math.min(d,45);if(d){x=x/d*m;y=y/d*m}joy={x:x/45,y:y/45};ST.style.left=32+x+"px";ST.style.top=32+y+"px"}
+let lt=null,lx;const L=document.getElementById("look");L.addEventListener("pointerdown",e=>{lt=e.pointerId;lx=e.clientX;L.setPointerCapture(lt)});L.addEventListener("pointermove",e=>{if(e.pointerId==lt){yaw-=(e.clientX-lx)*.008;camera.rotation.set(0,yaw,0);lx=e.clientX}});L.addEventListener("pointerup",e=>lt=null);
+const R=document.getElementById("run");R.addEventListener("pointerdown",()=>run=true);R.addEventListener("pointerup",()=>run=false);R.addEventListener("pointerleave",()=>run=false);
+function loop(){requestAnimationFrame(loop);if(running&&!over){let d=new THREE.Vector3(joy.x,0,joy.y);if(d.length()>.1){d.normalize().applyAxisAngle(new THREE.Vector3(0,1,0),yaw);let np=camera.position.clone().addScaledVector(d,run?.25:.14);if(!collide(np))camera.position.copy(np);
+if(run&&performance.now()-lastStepTime>350&&monster.position.distanceTo(camera.position)<16){lastStepTime=performance.now();heardNoise=true;noiseTimer=220;noisePosition.copy(camera.position);}}
+lamp.position.copy(camera.position);
+keyMeshes.forEach(k=>{if(k.visible){k.rotation.z+=.05;if(k.position.distanceTo(camera.position)<1){k.visible=false;collected++;if(collected==3)document.getElementById("status").textContent="🚪 ÇIKIŞ AÇILDI!"}}});
+// Canavar normalde haritada devriye gezer, seni yakında görünce kovalar
+let c=camera.position.clone().sub(monster.position);c.y=0;
+let distance=c.length();
+
+if(distance<18 && c.length() && canSeePlayer()){
+  const step=nextStepToward(monster.position,camera.position);
+  if(step){let dir=step.clone().sub(monster.position);dir.y=0; if(dir.length()>.02){dir.normalize();let np=monster.position.clone().addScaledVector(dir,.075);if(!collide(np))monster.position.copy(np);else monster.position.copy(step)}}
+  
+}else if(heardNoise&&noiseTimer>0){
+  let ndir=noisePosition.clone().sub(monster.position);ndir.y=0;
+  if(ndir.length()>.7){ndir.normalize();let np=monster.position.clone().addScaledVector(ndir,.045);if(!collide(np))monster.position.copy(np);}else heardNoise=false;
+  noiseTimer--;
+}else{
+  heardNoise=false;let target=patrolPoints[patrolIndex];let pdir=target.clone().sub(monster.position);pdir.y=0;
+  if(pdir.length()<.5)patrolIndex=(patrolIndex+1)%patrolPoints.length;
+  else{pdir.normalize();let np=monster.position.clone().addScaledVector(pdir,.038);if(!collide(np))monster.position.copy(np);}
+  
+}
+
+if(monster.position.distanceTo(camera.position)<1.4){jumpscare();setTimeout(()=>finish(false),850);}if(collected==3&&camera.position.distanceTo(exitPos)<1.4)finish(true)}
+// Canavarın yürürken hafif sallanması
+monster.rotation.z=Math.sin(performance.now()*.006)*.035;
+monster.position.y=Math.abs(Math.sin(performance.now()*.008))*.06;
+renderer.render(scene,camera)}loop();addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script></body></html>
